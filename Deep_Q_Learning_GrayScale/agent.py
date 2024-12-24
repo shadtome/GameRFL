@@ -1,15 +1,16 @@
 import torch
 import gymnasium as gym
 from torch import nn
-from collections import deque
 import numpy as np
 import os
 from gymnasium import wrappers
+import device
 
 # Here we are going to create a an agent designed for deep $Q$-neural networks.
 
 class Agent_Q_fun(nn.Module):
     def __init__(self, state_shape, n_actions):
+        """Neural Network to approximate the Q-function"""
         super().__init__()
         
         self.state_shape = state_shape
@@ -46,7 +47,8 @@ class Agent_Q_fun(nn.Module):
 
 class Agent:
     def __init__(self,env_name,Q_fun):
-        
+        """Intialize the agent with env_name for the atari game and the Q_fun class
+        model for the neural network for approximating the Q-function"""
         # enviroment name, like ALE/SpaceInvaders-v5 This needs to be set up 
         self.env_name = env_name
         # make the enviroment
@@ -59,6 +61,7 @@ class Agent:
         self.n_actions = self.env.action_space.n
         #Define Q_function neural network
         self.Q_fun = Q_fun(self.state_shape,self.n_actions)
+        self.Q_fun.to(device.DEVICE)
         self.env.close()
 
     
@@ -73,7 +76,7 @@ class Agent:
             return env.action_space.sample()
         else:
             
-            state_tensor = torch.tensor(np.array([state]), dtype=torch.float32)
+            state_tensor = torch.tensor(np.array([state]), dtype=torch.float32,device=device.DEVICE)
             #state_tensor = state_tensor.unsqueeze(1)
             return self.Q_fun(state_tensor).argmax().item()
         

@@ -1,15 +1,14 @@
 import torch
 import torch.nn as nn
 import gymnasium as gym
-import Deep_Q_Learning.agent as agent
 from collections import deque
 import numpy as np
 import random
 import matplotlib.pyplot as plt
 from torch.optim.lr_scheduler import StepLR
-import pickle
 import os
-from Space_Invaders.game_info import RAM_info
+import device
+
 
 
 class Q_training:
@@ -20,6 +19,7 @@ class Q_training:
 
         # The target Q_net
         self.target_Q_net = self.agent.Q_fun.copy()
+        self.target_Q_net.to(device.Device)
 
         # Replay buffer
         self.replay_buffer = deque(maxlen=10000)
@@ -61,18 +61,18 @@ class Q_training:
         sample = random.choices(self.replay_buffer,k=batch_size)
         state, action, next_state, reward,terminated = zip(*sample)
 
-        state_tensor = torch.tensor(np.array(state),dtype=torch.float32)
+        state_tensor = torch.tensor(np.array(state),dtype=torch.float32,device=device.DEVICE)
         #state_tensor = state_tensor.permute((0,3,1,2))
         #state_tensor = state_tensor.unsqueeze(1)
 
         action_tensor = torch.tensor(np.array(action), dtype=torch.int64)
 
-        next_state_tensor = torch.tensor(np.array(next_state),dtype=torch.float32)
+        next_state_tensor = torch.tensor(np.array(next_state),dtype=torch.float32,device=device.DEVICE)
         #next_state_tensor = next_state_tensor.permute((0,3,1,2))
         #next_state_tensor = next_state_tensor.unsqueeze(1)
 
-        reward_tensor = torch.tensor(np.array(reward),dtype=torch.float32)
-        terminated_tensor = torch.tensor(np.array(terminated),dtype = torch.int64)
+        reward_tensor = torch.tensor(np.array(reward),dtype=torch.float32,device=device.DEVICE)
+        terminated_tensor = torch.tensor(np.array(terminated),dtype = torch.int64,device=device.DEVICE)
         return state_tensor,action_tensor,next_state_tensor,reward_tensor, terminated_tensor
 
     def compute_loss(self,batch_size, gamma=0.97):
@@ -92,7 +92,7 @@ class Q_training:
         self.epsilon = max(final_epsilon,start_epsilon + ((final_epsilon-start_epsilon)/n_episodes)*episode )
         print(self.epsilon)
 
-    def train(self):
+    def train(self,reward_wrapper):
         n_episodes = self.n_episodes
         env = gym.make(self.agent.env_name)
         env = gym.wrappers.RecordEpisodeStatistics(env,buffer_length=n_episodes)
@@ -134,7 +134,7 @@ class Q_training:
                     
                     self.optimizer.zero_grad()
                     loss = self.compute_loss(batch_size=64)
-                    self.losses.append(loss.detach().numpy())
+                    self.losses.append(loss.detach().to('cpu').numpy())
                     loss.backward()
                     self.optimizer.step()
                     self.scheduler.step()
@@ -146,34 +146,12 @@ class Q_training:
             self.cum_reward.append(cum_reward)
             print(f'cumulative reward: {cum_reward}')
             self.decay_epsilon(ep,n_episodes)
-
-            #checkpoint save:
-            #if ep %20==0:
-                #self.save_checkpoint(ep)
-        if self.agent.env_name == 'ALE/SpaceInvaders-v5':
-            self.dist_rewards(env.env.env.env.dist_rewards)
+        self.dist_rewards(env,reward_wrapper)
         env.close()
                 
     def results(self):
-
-        plt.plot(self.losses)
-        plt.title('Losses')
-        plt.xlabel('episode')
-        plt.ylabel('loss')
-        plt.savefig(os.path.join(self.filepath,'losses.png'))
-
-        fig, axe = plt.subplots(1,2,figsize=(10,10))
-
-        axe[0].plot(self.cum_reward)
-        axe[0].set_xlabel('episode')
-        axe[0].set_ylabel('cum awards')
-        axe[0].set_title('cumulative awards across episodes')
-
-        axe[1].hist(self.actions_taken)
-        axe[1].set_title('histogram of actions')
-        plt.savefig(os.path.join(self.filepath,'rewards_dist_actions.png'))
         
-        """
+        
         fig, axe = plt.subplots(2,2,figsize=(10,10))
         axe[0][0].plot(self.losses)
         axe[0][0].set_xlabel('episode')
@@ -188,15 +166,18 @@ class Q_training:
         axe[1][0].hist(self.actions_taken)
         axe[1][0].set_title('histogram of actions')
         plt.savefig(os.path.join(self.filepath,'results.png'))
-        """
+        
 
 
-    def dist_rewards(self,dist):
-        plt.figure(figsize=(10,10))
-        keys = list(dist.keys())
-        values = list(dist.values())
-        plt.bar(keys,values)
-        plt.savefig(os.path.join(self.filepath,'rewards_dist.png'))
+    def dist_rewards(self,env,reward_wrapper):
+        # First check if the there is an enviroment with the specified reward wrapper
+        wrap = get_wrapper(env,reward_wrapper)
+        if wrap!=None:
+            plt.figure(figsize=(10,10))
+            keys = list(wrap.dist_rewards.keys())
+            values = list(wrap.dist_rewards.values())
+            plt.bar(keys,values)
+            plt.savefig(os.path.join(self.filepath,'rewards_dist.png'))
 
     def save_checkpoint(self, episode):
         if os.path.exists(self.filepath)==False:
@@ -242,4 +223,11 @@ class Q_training:
 
 
     
-
+def get_wrapper(env,wrapper_type):
+    """Retrieve a specific wrapper from a Gymnasium environment."""
+    current_env = env
+    while isinstance(current_env, gym.Wrapper):
+        if isinstance(current_env, wrapper_type):
+            return current_env
+        current_env = current_env.env  # Move to the next layer
+    return None  # Wrapper not found

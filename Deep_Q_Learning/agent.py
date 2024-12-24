@@ -4,6 +4,7 @@ from torch import nn
 from collections import deque
 import numpy as np
 import os
+import device
 
 # Here we are going to create a an agent designed for deep $Q$-neural networks.
 
@@ -44,7 +45,8 @@ class Agent_Q_fun(nn.Module):
 
 class Agent:
     def __init__(self,env_name,Q_fun):
-        
+        """Initalize the base agent class, put the enviroment name for the atari game,
+        and the Neural network used to approximate the Q-function"""
         # enviroment name, like ALE/SpaceInvaders-v5 This needs to be set up 
         self.env_name = env_name
         # make the enviroment
@@ -57,6 +59,7 @@ class Agent:
         self.n_actions = self.env.action_space.n
         #Define Q_function neural network
         self.Q_fun = Q_fun(self.state_shape,self.n_actions)
+        self.Q_fun.to(device.DEVICE)
         self.env.close()
 
     
@@ -69,7 +72,7 @@ class Agent:
             return int(env.action_space.sample())
         else:
             
-            state_tensor = torch.tensor(np.array([state]), dtype=torch.float32)
+            state_tensor = torch.tensor(np.array([state]), dtype=torch.float32,device=device.DEVICE)
             state_tensor = state_tensor.permute((0,3,1,2))
             return int(self.Q_fun(state_tensor).argmax().item())
         
